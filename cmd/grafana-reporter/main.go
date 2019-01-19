@@ -22,9 +22,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/IzakMarais/reporter/grafana"
-	"github.com/IzakMarais/reporter/report"
 	"github.com/gorilla/mux"
+	"github.com/negbie/reporter/grafana"
+	"github.com/negbie/reporter/report"
 )
 
 var proto = flag.String("proto", "http://", "Grafana Protocol. Change to 'https://' if Grafana is using https. Reporter will still serve http.")
@@ -35,9 +35,6 @@ var templateDir = flag.String("templates", "templates/", "Directory for custom T
 func main() {
 	flag.Parse()
 	log.SetOutput(os.Stdout)
-
-	//'generated*'' variables injected from build.gradle: task 'injectGoVersion()'
-	log.Printf("grafana reporter, version: %s.%s-%s hash: %s", generatedMajor, generatedMinor, generatedRelease, generatedGitHash)
 	log.Printf("serving at '%s' and using grafana at '%s'", *port, *ip)
 
 	router := mux.NewRouter()

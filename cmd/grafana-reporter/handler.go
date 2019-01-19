@@ -19,23 +19,21 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/IzakMarais/reporter/grafana"
-	"github.com/IzakMarais/reporter/report"
 	"github.com/gorilla/mux"
+	"github.com/negbie/reporter/grafana"
+	"github.com/negbie/reporter/report"
 )
 
 // ServeReportHandler interface facilitates testsing the reportServing http handler
 type ServeReportHandler struct {
 	newGrafanaClient func(url string, apiToken string, variables url.Values) grafana.Client
-	newReport        func(g grafana.Client, dashName string, time grafana.TimeRange, texTemplate string) report.Report
+	newReport        func(g grafana.Client, dashName string, time grafana.TimeRange) report.Report
 }
 
 // RegisterHandlers registers all http.Handler's with their associated routes to the router
@@ -48,7 +46,7 @@ func RegisterHandlers(router *mux.Router, reportServerV4, reportServerV5 ServeRe
 func (h ServeReportHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.Print("Reporter called")
 	g := h.newGrafanaClient(*proto+*ip, apiToken(req), dashVariables(req))
-	rep := h.newReport(g, dashID(req), time(req), texTemplate(req))
+	rep := h.newReport(g, dashID(req), time(req))
 
 	file, err := rep.Generate()
 	if err != nil {
@@ -74,7 +72,7 @@ func addFilenameHeader(w http.ResponseWriter, title string) {
 	filename := strconv.QuoteToASCII(title)
 	filename = strings.TrimLeft(filename, "\"")
 	filename = strings.TrimRight(filename, "\"")
-	filename += ".pdf"
+	filename += ".png"
 	log.Println("Extracted filename from dashboard title: ", filename)
 	header := fmt.Sprintf("inline; filename=\"%s\"", filename)
 	w.Header().Add("Content-Disposition", header)
@@ -114,21 +112,4 @@ func dashVariables(r *http.Request) url.Values {
 		log.Println("Called without variable")
 	}
 	return output
-}
-
-func texTemplate(r *http.Request) string {
-	fName := r.URL.Query().Get("template")
-	if fName == "" {
-		return ""
-	}
-	file := filepath.Join(*templateDir, fName+".tex")
-	log.Println("Called with template:", file)
-
-	customTemplate, err := ioutil.ReadFile(file)
-	if err != nil {
-		log.Printf("Error reading template file: %q", err)
-		return ""
-	}
-
-	return string(customTemplate)
 }

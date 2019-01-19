@@ -17,16 +17,20 @@
 package report
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
-	"text/template"
 
-	"github.com/IzakMarais/reporter/grafana"
+	"github.com/negbie/reporter/grafana"
 	"github.com/pborman/uuid"
 )
 
@@ -39,12 +43,11 @@ type Report interface {
 }
 
 type report struct {
-	gClient     grafana.Client
-	time        grafana.TimeRange
-	texTemplate string
-	dashName    string
-	tmpDir      string
-	dashTitle   string
+	gClient   grafana.Client
+	time      grafana.TimeRange
+	dashName  string
+	tmpDir    string
+	dashTitle string
 }
 
 const (
@@ -55,16 +58,13 @@ const (
 
 // New creates a new Report.
 // texTemplate is the content of a LaTex template file. If empty, a default tex template is used.
-func New(g grafana.Client, dashName string, time grafana.TimeRange, texTemplate string) Report {
-	return new(g, dashName, time, texTemplate)
+func New(g grafana.Client, dashName string, time grafana.TimeRange) Report {
+	return new(g, dashName, time)
 }
 
-func new(g grafana.Client, dashName string, time grafana.TimeRange, texTemplate string) *report {
-	if texTemplate == "" {
-		texTemplate = defaultTemplate
-	}
+func new(g grafana.Client, dashName string, time grafana.TimeRange) *report {
 	tmpDir := filepath.Join("tmp", uuid.New())
-	return &report{g, time, texTemplate, dashName, tmpDir, ""}
+	return &report{g, time, dashName, tmpDir, ""}
 }
 
 // Generate returns the report.pdf file.  After reading this file it should be Closed()
@@ -77,18 +77,13 @@ func (rep *report) Generate() (pdf io.ReadCloser, err error) {
 	}
 	rep.dashTitle = dash.Title
 
-	err = rep.renderPNGsParallel(dash)
+	fn, err := rep.renderPNGsParallel(dash)
 	if err != nil {
 		err = fmt.Errorf("error rendering PNGs in parralel for dash %+v: %v", dash, err)
 		return
 	}
-	err = rep.generateTeXFile(dash)
-	if err != nil {
-		err = fmt.Errorf("error generating TeX file for dash %+v: %v", dash, err)
-		return
-	}
-	pdf, err = rep.runLaTeX()
-	return
+
+	return os.OpenFile(fn, os.O_RDWR|os.O_CREATE, 0755)
 }
 
 // Title returns the dashboard title parsed from the dashboard definition
@@ -124,13 +119,14 @@ func (rep *report) texPath() string {
 	return filepath.Join(rep.tmpDir, reportTexFile)
 }
 
-func (rep *report) renderPNGsParallel(dash grafana.Dashboard) error {
+func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 	//buffer all panels on a channel
 	panels := make(chan grafana.Panel, len(dash.Panels))
 	for _, p := range dash.Panels {
 		panels <- p
 	}
 	close(panels)
+	images := []*imageData{}
 
 	//fetch images in parrallel form Grafana sever.
 	//limit concurrency using a worker pool to avoid overwhelming grafana
@@ -143,77 +139,70 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) error {
 		go func(panels <-chan grafana.Panel, errs chan<- error) {
 			defer wg.Done()
 			for p := range panels {
-				err := rep.renderPNG(p)
+				filename, err := rep.renderPNG(p)
 				if err != nil {
 					log.Printf("Error creating image for panel: %v", err)
 					errs <- err
 				}
+				fimg, err := os.Open(filename)
+				if err != nil {
+					log.Fatal("Unable to open file", filename)
+				}
+				defer fimg.Close()
+				// Decode the file to get the image data
+				img, _, err := image.Decode(fimg)
+				if err != nil {
+					log.Fatal("Unable to decode ", filename)
+				}
+				// Fill image data object
+				imd, err := getImageData(&img, filename)
+				if err != nil {
+					log.Fatal(err)
+				}
+				// Append to imadeData array
+				images = append(images, &imd)
 			}
 		}(panels, errs)
+
 	}
 	wg.Wait()
 	close(errs)
 
 	for err := range errs {
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+
+	return processImages(images, dash.Title)
 }
 
-func (rep *report) renderPNG(p grafana.Panel) error {
+func (rep *report) renderPNG(p grafana.Panel) (string, error) {
 	body, err := rep.gClient.GetPanelPng(p, rep.dashName, rep.time)
 	if err != nil {
-		return fmt.Errorf("error getting panel %+v: %v", p, err)
+		return "", fmt.Errorf("error getting panel %+v: %v", p, err)
 	}
 	defer body.Close()
 
 	err = os.MkdirAll(rep.imgDirPath(), 0777)
 	if err != nil {
-		return fmt.Errorf("error creating img directory:%v", err)
+		return "", fmt.Errorf("error creating img directory:%v", err)
 	}
+	fmt.Println(rep.imgDirPath())
 	imgFileName := fmt.Sprintf("image%d.png", p.Id)
 	file, err := os.Create(filepath.Join(rep.imgDirPath(), imgFileName))
 	if err != nil {
-		return fmt.Errorf("error creating image file:%v", err)
+		return "", fmt.Errorf("error creating image file:%v", err)
 	}
 	defer file.Close()
+	fmt.Println(file.Name())
 
 	_, err = io.Copy(file, body)
 	if err != nil {
-		return fmt.Errorf("error copying body to file:%v", err)
-	}
-	return nil
-}
-
-func (rep *report) generateTeXFile(dash grafana.Dashboard) error {
-	type templData struct {
-		grafana.Dashboard
-		grafana.TimeRange
-		grafana.Client
+		return "", fmt.Errorf("error copying body to file:%v", err)
 	}
 
-	err := os.MkdirAll(rep.tmpDir, 0777)
-	if err != nil {
-		return fmt.Errorf("error creating temporary directory at %v: %v", rep.tmpDir, err)
-	}
-	file, err := os.Create(rep.texPath())
-	if err != nil {
-		return fmt.Errorf("error creating tex file at %v : %v", rep.texPath(), err)
-	}
-	defer file.Close()
-
-	tmpl, err := template.New("report").Delims("[[", "]]").Parse(rep.texTemplate)
-	if err != nil {
-		return fmt.Errorf("error parsing template '%s': %v", rep.texTemplate, err)
-	}
-	data := templData{dash, rep.time, rep.gClient}
-	err = tmpl.Execute(file, data)
-	if err != nil {
-		return fmt.Errorf("error executing tex template:%v", err)
-	}
-	return nil
+	return file.Name(), nil
 }
 
 func (rep *report) runLaTeX() (pdf *os.File, err error) {
@@ -235,4 +224,141 @@ func (rep *report) runLaTeX() (pdf *os.File, err error) {
 	}
 	pdf, err = os.Open(rep.pdfPath())
 	return
+}
+
+// imageData struct fold holding each input image and related data
+type imageData struct {
+	img    image.Image
+	width  int
+	height int
+	path   string
+}
+
+// usage function to print usage on -help
+func usage() {
+	fmt.Println("gombine [options] <file1> <file2> ...")
+	fmt.Println("Options:")
+	flag.PrintDefaults()
+	fmt.Println("Ex: gombine -format=png -side=bottom -out=go.png 1.png 2.png")
+	os.Exit(0)
+}
+
+// getImageData function to populate a imageData object with input image details
+// Takes the image, and filename as arguments
+// Returns the filled imageData object and an error if any
+func getImageData(img *image.Image, filename string) (imageData, error) {
+	imd := &imageData{}
+	imd.img = *img
+	imd.path = filename
+	h, w, err := getDim(imd)
+	imd.height, imd.width = h, w
+	if err != nil {
+		return *imd, err
+	}
+
+	return *imd, nil
+
+}
+
+// getDim function to get the dimensions of an input image
+// Takes imageData as argument
+// Return height, width and error if any
+func getDim(imd *imageData) (int, int, error) {
+	f, err := os.Open(imd.path)
+	if err != nil {
+		return -1, -1, err
+	}
+	defer f.Close()
+	// Decode config of image to get height and width
+	config, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return -1, -1, err
+	}
+	return config.Height, config.Width, nil
+}
+
+// getTotalDim function to get the total height and width
+// i.e, sum of widths and heights of all input images
+// Takes the array of imageData as argument
+// Returns total height, width and error if any
+func getTotalDim(images []*imageData) (int, int, error) {
+	height, width := 0, 0
+	// Loop through images and add the height and width
+	for _, imd := range images {
+		height = height + imd.height
+		width = width + imd.width
+	}
+
+	if height == 0 && width == 0 {
+		return height, width, errors.New("total Height and Width cannot be 0")
+	}
+
+	return height, width, nil
+}
+
+// getMaxDim function to get the maximum width and height from
+// all the input images. Takes imageData array as argument
+// Returns max height, width and error if any
+func getMaxDim(images []*imageData) (int, int, error) {
+	maxh, maxw := 0, 0
+	// Loop through images to find the largest height and width
+	for _, imd := range images {
+		if imd.height > maxh {
+			maxh = imd.height
+		}
+		if imd.width > maxw {
+			maxw = imd.width
+		}
+	}
+	return maxh, maxw, nil
+}
+
+// processImages function to loop through all images in the imageData array
+// and calculate the total height, width and max height, width.
+// Finally calls makeImage to create the image
+// Takes the array of imageData, format and side as arguments
+func processImages(images []*imageData, outfile string) (out string, err error) {
+	th, tw, err := getTotalDim(images)
+	if err != nil {
+		return "", err
+	}
+	maxh, maxw, err := getMaxDim(images)
+	if err != nil {
+		return "", err
+	}
+	// Create the output image
+	out, err = makeImage(th, tw, maxh, maxw, images, outfile)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// makeImage function to create the combined image from all the input images
+// Takes total height, width, max height, width, input images, format to
+// encode. Returns error if any
+func makeImage(th, tw, maxh, maxw int, images []*imageData, outfile string) (string, error) {
+	var img *image.RGBA
+	posx, posy := 0, 0
+
+	img = image.NewRGBA(image.Rect(0, 0, maxw, th))
+	for _, imd := range images {
+		r := image.Rect(posx, posy, posx+imd.width, posy+imd.height)
+		draw.Draw(img, r, imd.img, image.Point{0, 0}, draw.Over)
+		posy = posy + imd.height
+	}
+
+	file := outfile + ".png"
+	out, err := os.Create(file)
+	if err != nil {
+		return "", err
+	}
+	defer out.Close()
+
+	err = png.Encode(out, img)
+	if err != nil {
+		return "", err
+	}
+
+	return file, nil
 }
