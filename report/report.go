@@ -29,7 +29,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/negbie/reporter/grafana"
+	"github.com/negbie/grafpng/grafana"
 	"github.com/pborman/uuid"
 )
 

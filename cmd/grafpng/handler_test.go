@@ -26,8 +26,8 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	"github.com/negbie/reporter/grafana"
-	"github.com/negbie/reporter/report"
+	"github.com/negbie/grafpng/grafana"
+	"github.com/negbie/grafpng/report"
 	. "github.com/smartystreets/goconvey/convey"
 )
 

@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/negbie/reporter/grafana"
-	"github.com/negbie/reporter/report"
+	"github.com/negbie/grafpng/grafana"
+	"github.com/negbie/grafpng/report"
 )
 
 // ServeReportHandler interface facilitates testsing the reportServing http handler
