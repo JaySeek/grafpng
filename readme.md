@@ -1,7 +1,7 @@
 
-# Grafana reporter
+# grafpng
 
-A simple http service that generates *.png reports from [Grafana](http://grafana.org/) dashboards.
+A simple http service that generates a *.png image from Grafana dashboards.
 
 ## Requirements
 Build requirements:

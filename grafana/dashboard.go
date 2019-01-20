@@ -88,9 +88,9 @@ func NewDashboard(dashJSON []byte, variables url.Values) Dashboard {
 
 func (dc dashContainer) NewDashboard(variables url.Values) Dashboard {
 	var dash Dashboard
-	dash.Title = sanitizeLaTexInput(dc.Dashboard.Title)
-	dash.Description = sanitizeLaTexInput(dc.Dashboard.Description)
-	dash.VariableValues = sanitizeLaTexInput(getVariablesValues(variables))
+	dash.Title = dc.Dashboard.Title
+	dash.Description = dc.Dashboard.Description
+	dash.VariableValues = getVariablesValues(variables)
 
 	if len(dc.Dashboard.Rows) == 0 {
 		return populatePanelsFromV5JSON(dash, dc)
@@ -100,9 +100,9 @@ func (dc dashContainer) NewDashboard(variables url.Values) Dashboard {
 
 func populatePanelsFromV4JSON(dash Dashboard, dc dashContainer) Dashboard {
 	for _, row := range dc.Dashboard.Rows {
-		row.Title = sanitizeLaTexInput(row.Title)
+		row.Title = row.Title
 		for i, p := range row.Panels {
-			p.Title = sanitizeLaTexInput(p.Title)
+			p.Title = p.Title
 			row.Panels[i] = p
 			dash.Panels = append(dash.Panels, p)
 		}
@@ -117,7 +117,7 @@ func populatePanelsFromV5JSON(dash Dashboard, dc dashContainer) Dashboard {
 		if p.Type == "row" {
 			continue
 		}
-		p.Title = sanitizeLaTexInput(p.Title)
+		p.Title = p.Title
 		dash.Panels = append(dash.Panels, p)
 	}
 	return dash
@@ -134,6 +134,13 @@ func (p Panel) Is(t PanelType) bool {
 	return false
 }
 
+func (p Panel) IsText() bool {
+	if p.Type == "text" {
+		return true
+	}
+	return false
+}
+
 func (r Row) IsVisible() bool {
 	return r.Showtitle
 }
@@ -144,18 +151,4 @@ func getVariablesValues(variables url.Values) string {
 		values = append(values, strings.Join(v, ", "))
 	}
 	return strings.Join(values, ", ")
-}
-
-func sanitizeLaTexInput(input string) string {
-	input = strings.Replace(input, "\\", "\\textbackslash ", -1)
-	input = strings.Replace(input, "&", "\\&", -1)
-	input = strings.Replace(input, "%", "\\%", -1)
-	input = strings.Replace(input, "$", "\\$", -1)
-	input = strings.Replace(input, "#", "\\#", -1)
-	input = strings.Replace(input, "_", "\\_", -1)
-	input = strings.Replace(input, "{", "\\{", -1)
-	input = strings.Replace(input, "}", "\\}", -1)
-	input = strings.Replace(input, "~", "\\textasciitilde ", -1)
-	input = strings.Replace(input, "^", "\\textasciicircum ", -1)
-	return input
 }
