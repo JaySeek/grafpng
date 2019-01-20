@@ -41,11 +41,12 @@ type Report interface {
 }
 
 type report struct {
-	gClient   grafana.Client
+	client    grafana.Client
 	time      grafana.TimeRange
 	dashName  string
-	tmpDir    string
 	dashTitle string
+	tmpDir    string
+	worker    int
 }
 
 // imageData struct fold holding each input image and related data
@@ -61,20 +62,21 @@ const (
 )
 
 // NewReport creates a new Report.
-func NewReport(g grafana.Client, d string, t grafana.TimeRange) Report {
+func NewReport(g grafana.Client, d string, t grafana.TimeRange, w int) Report {
 	return &report{
-		gClient:   g,
+		client:    g,
 		time:      t,
 		dashName:  d,
-		tmpDir:    filepath.Join("tmp", uuid.New()),
 		dashTitle: "",
+		tmpDir:    filepath.Join("tmp", uuid.New()),
+		worker:    w,
 	}
 }
 
 // Generate returns the png file. After reading this file it should be Closed()
 // After closing the file, call report.Clean() to delete the file as well the temporary build files
 func (rep *report) Generate() (f io.ReadCloser, err error) {
-	dash, err := rep.gClient.GetDashboard(rep.dashName)
+	dash, err := rep.client.GetDashboard(rep.dashName)
 	if err != nil {
 		err = fmt.Errorf("error fetching dashboard %v: %v", rep.dashName, err)
 		return
@@ -86,15 +88,14 @@ func (rep *report) Generate() (f io.ReadCloser, err error) {
 		err = fmt.Errorf("error rendering PNGs in parralel for dash %+v: %v", dash, err)
 		return
 	}
-
-	return os.OpenFile(fn, os.O_RDWR|os.O_CREATE, 0755)
+	return os.Open(fn)
 }
 
 // Title returns the dashboard title parsed from the dashboard definition
 func (rep *report) Title() string {
 	//lazy fetch if Title() is called before Generate()
 	if rep.dashTitle == "" {
-		dash, err := rep.gClient.GetDashboard(rep.dashName)
+		dash, err := rep.client.GetDashboard(rep.dashName)
 		if err != nil {
 			return ""
 		}
@@ -127,12 +128,11 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 	//fetch images in parrallel form Grafana sever.
 	//limit concurrency using a worker pool to avoid overwhelming grafana
 	//for dashboards with many panels.
-	var wg sync.WaitGroup
-	workers := 2
-	wg.Add(workers)
 	var j uint64
+	var wg sync.WaitGroup
+	wg.Add(rep.worker)
 	errs := make(chan error, len(dash.Panels)) //routines can return errors on a channel
-	for i := 0; i < workers; i++ {
+	for i := 0; i < rep.worker; i++ {
 		go func(panels <-chan grafana.Panel, errs chan<- error) {
 			defer wg.Done()
 			for p := range panels {
@@ -176,7 +176,7 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 }
 
 func (rep *report) renderPNG(p grafana.Panel) (string, error) {
-	body, err := rep.gClient.GetPanelPng(p, rep.dashName, rep.time)
+	body, err := rep.client.GetPanelPng(p, rep.dashName, rep.time)
 	if err != nil {
 		return "", fmt.Errorf("error getting panel %+v: %v", p, err)
 	}
@@ -187,7 +187,7 @@ func (rep *report) renderPNG(p grafana.Panel) (string, error) {
 		return "", fmt.Errorf("error creating img directory:%v", err)
 	}
 
-	imgFileName := fmt.Sprintf("image%d.png", p.Id)
+	imgFileName := fmt.Sprintf("image%d.png", p.ID)
 	file, err := os.Create(filepath.Join(rep.imgDirPath(), imgFileName))
 	if err != nil {
 		return "", fmt.Errorf("error creating image file:%v", err)
@@ -214,14 +214,11 @@ func getImageData(img *image.Image, filename string) (imageData, error) {
 	if err != nil {
 		return *imd, err
 	}
-
 	return *imd, nil
-
 }
 
-// getDim function to get the dimensions of an input image
-// Takes imageData as argument
-// Return height, width and error if any
+// getDim function to get the dimensions of an input image.
+// Takes imageData as argument. Return height, width and error.
 func getDim(imd *imageData) (int, int, error) {
 	f, err := os.Open(imd.path)
 	if err != nil {
@@ -276,7 +273,7 @@ func getMaxDim(images []*imageData) (int, int, error) {
 // and calculate the total height, width and max height, width.
 // Finally calls makeImage to create the image
 // Takes the array of imageData, format and side as arguments
-func processImages(images []*imageData, outfile string) (out string, err error) {
+func processImages(images []*imageData, outfile string) (f string, err error) {
 	th, tw, err := getTotalDim(images)
 	if err != nil {
 		return "", err
@@ -286,11 +283,11 @@ func processImages(images []*imageData, outfile string) (out string, err error) 
 		return "", err
 	}
 	// Create the output image
-	out, err = makeImage(th, tw, maxh, maxw, images, outfile)
+	f, err = makeImage(th, tw, maxh, maxw, images, outfile)
 	if err != nil {
 		return "", err
 	}
-	return out, nil
+	return f, nil
 }
 
 // makeImage function to create the combined image from all the input images

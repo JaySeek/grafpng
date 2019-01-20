@@ -34,7 +34,7 @@ import (
 // ServeReportHandler interface facilitates testsing the reportServing http handler
 type ServeReportHandler struct {
 	newGrafanaClient func(url string, apiToken string, variables url.Values) grafana.Client
-	newReport        func(g grafana.Client, dashName string, time grafana.TimeRange) report.Report
+	newReport        func(g grafana.Client, dashName string, time grafana.TimeRange, worker int) report.Report
 }
 
 // RegisterHandlers registers all http.Handler's with their associated routes to the router
@@ -47,7 +47,7 @@ func RegisterHandlers(router *mux.Router, reportServerV4, reportServerV5 ServeRe
 func (h ServeReportHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.Print("Reporter called")
 	g := h.newGrafanaClient(*proto+*ip, apiToken(req), dashVariables(req))
-	rep := h.newReport(g, dashID(req), gTime(req))
+	rep := h.newReport(g, dashID(req), gTime(req), *worker)
 
 	file, err := rep.Generate()
 	if err != nil {

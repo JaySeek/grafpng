@@ -30,6 +30,7 @@ import (
 var proto = flag.String("proto", "http://", "Grafana Protocol")
 var ip = flag.String("ip", "localhost:3000", "Grafana Address")
 var port = flag.String("port", ":8686", "Service Address")
+var worker = flag.Int("worker", 2, "Service Workers")
 
 func main() {
 	flag.Parse()

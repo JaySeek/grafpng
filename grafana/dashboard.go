@@ -43,26 +43,24 @@ func (p PanelType) string() string {
 
 // Panel represents a Grafana dashboard panel
 type Panel struct {
-	Id    int
+	ID    int
 	Type  string
 	Title string
 }
 
 // Row represents a container for Panels
 type Row struct {
-	Id        int
+	ID        int
 	Showtitle bool
 	Title     string
 	Panels    []Panel
 }
 
 // Dashboard represents a Grafana dashboard
-// This is both used to unmarshal the dashbaord JSON into
-// and then enriched (sanitize fields for TeX consumption and add VarialbeValues)
 type Dashboard struct {
 	Title          string
 	Description    string
-	VariableValues string //Not present in the Grafana JSON structure. Enriched data passed used by the Tex templating
+	VariableValues string //Not present in the Grafana JSON structure
 	Rows           []Row
 	Panels         []Panel
 }
@@ -100,15 +98,12 @@ func (dc dashContainer) NewDashboard(variables url.Values) Dashboard {
 
 func populatePanelsFromV4JSON(dash Dashboard, dc dashContainer) Dashboard {
 	for _, row := range dc.Dashboard.Rows {
-		row.Title = row.Title
 		for i, p := range row.Panels {
-			p.Title = p.Title
 			row.Panels[i] = p
 			dash.Panels = append(dash.Panels, p)
 		}
 		dash.Rows = append(dash.Rows, row)
 	}
-
 	return dash
 }
 
@@ -117,7 +112,6 @@ func populatePanelsFromV5JSON(dash Dashboard, dc dashContainer) Dashboard {
 		if p.Type == "row" {
 			continue
 		}
-		p.Title = p.Title
 		dash.Panels = append(dash.Panels, p)
 	}
 	return dash
