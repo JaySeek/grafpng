@@ -18,7 +18,6 @@ package report
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"image"
 	"image/draw"
@@ -26,18 +25,18 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/negbie/reporter/grafana"
 	"github.com/pborman/uuid"
 )
 
 // Report groups functions related to genrating the report.
-// After reading and closing the pdf returned by Generate(), call Clean() to delete the pdf file as well the temporary build files
 type Report interface {
-	Generate() (pdf io.ReadCloser, err error)
+	Generate() (f io.ReadCloser, err error)
 	Title() string
 	Clean()
 }
@@ -50,14 +49,19 @@ type report struct {
 	dashTitle string
 }
 
+// imageData struct fold holding each input image and related data
+type imageData struct {
+	img    image.Image
+	width  int
+	height int
+	path   string
+}
+
 const (
-	imgDir        = "images"
-	reportTexFile = "report.tex"
-	reportPdf     = "report.pdf"
+	imgDir = "images"
 )
 
 // New creates a new Report.
-// texTemplate is the content of a LaTex template file. If empty, a default tex template is used.
 func New(g grafana.Client, dashName string, time grafana.TimeRange) Report {
 	return new(g, dashName, time)
 }
@@ -67,9 +71,9 @@ func new(g grafana.Client, dashName string, time grafana.TimeRange) *report {
 	return &report{g, time, dashName, tmpDir, ""}
 }
 
-// Generate returns the report.pdf file.  After reading this file it should be Closed()
+// Generate returns the png file. After reading this file it should be Closed()
 // After closing the file, call report.Clean() to delete the file as well the temporary build files
-func (rep *report) Generate() (pdf io.ReadCloser, err error) {
+func (rep *report) Generate() (f io.ReadCloser, err error) {
 	dash, err := rep.gClient.GetDashboard(rep.dashName)
 	if err != nil {
 		err = fmt.Errorf("error fetching dashboard %v: %v", rep.dashName, err)
@@ -111,14 +115,6 @@ func (rep *report) imgDirPath() string {
 	return filepath.Join(rep.tmpDir, imgDir)
 }
 
-func (rep *report) pdfPath() string {
-	return filepath.Join(rep.tmpDir, reportPdf)
-}
-
-func (rep *report) texPath() string {
-	return filepath.Join(rep.tmpDir, reportTexFile)
-}
-
 func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 	//buffer all panels on a channel
 	panels := make(chan grafana.Panel, len(dash.Panels))
@@ -126,14 +122,15 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 		panels <- p
 	}
 	close(panels)
-	images := []*imageData{}
+	images := make([]*imageData, len(dash.Panels))
 
 	//fetch images in parrallel form Grafana sever.
 	//limit concurrency using a worker pool to avoid overwhelming grafana
 	//for dashboards with many panels.
 	var wg sync.WaitGroup
-	workers := 5
+	workers := runtime.NumCPU()
 	wg.Add(workers)
+	var j uint64
 	errs := make(chan error, len(dash.Panels)) //routines can return errors on a channel
 	for i := 0; i < workers; i++ {
 		go func(panels <-chan grafana.Panel, errs chan<- error) {
@@ -160,7 +157,8 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 					log.Fatal(err)
 				}
 				// Append to imadeData array
-				images = append(images, &imd)
+				images[atomic.LoadUint64(&j)] = &imd
+				atomic.AddUint64(&j, 1)
 			}
 		}(panels, errs)
 
@@ -203,44 +201,6 @@ func (rep *report) renderPNG(p grafana.Panel) (string, error) {
 	}
 
 	return file.Name(), nil
-}
-
-func (rep *report) runLaTeX() (pdf *os.File, err error) {
-	cmdPre := exec.Command("pdflatex", "-halt-on-error", "-draftmode", reportTexFile)
-	cmdPre.Dir = rep.tmpDir
-	outBytesPre, errPre := cmdPre.CombinedOutput()
-	log.Println("Calling LaTeX - preprocessing")
-	if errPre != nil {
-		err = fmt.Errorf("error calling LaTeX preprocessing: %q. Latex preprocessing failed with output: %s ", errPre, string(outBytesPre))
-		return
-	}
-	cmd := exec.Command("pdflatex", "-halt-on-error", reportTexFile)
-	cmd.Dir = rep.tmpDir
-	outBytes, err := cmd.CombinedOutput()
-	log.Println("Calling LaTeX and building PDF")
-	if err != nil {
-		err = fmt.Errorf("error calling LaTeX: %q. Latex failed with output: %s ", err, string(outBytes))
-		return
-	}
-	pdf, err = os.Open(rep.pdfPath())
-	return
-}
-
-// imageData struct fold holding each input image and related data
-type imageData struct {
-	img    image.Image
-	width  int
-	height int
-	path   string
-}
-
-// usage function to print usage on -help
-func usage() {
-	fmt.Println("gombine [options] <file1> <file2> ...")
-	fmt.Println("Options:")
-	flag.PrintDefaults()
-	fmt.Println("Ex: gombine -format=png -side=bottom -out=go.png 1.png 2.png")
-	os.Exit(0)
 }
 
 // getImageData function to populate a imageData object with input image details
