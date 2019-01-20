@@ -26,7 +26,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -61,14 +60,15 @@ const (
 	imgDir = "images"
 )
 
-// New creates a new Report.
-func New(g grafana.Client, dashName string, time grafana.TimeRange) Report {
-	return new(g, dashName, time)
-}
-
-func new(g grafana.Client, dashName string, time grafana.TimeRange) *report {
-	tmpDir := filepath.Join("tmp", uuid.New())
-	return &report{g, time, dashName, tmpDir, ""}
+// NewReport creates a new Report.
+func NewReport(g grafana.Client, d string, t grafana.TimeRange) Report {
+	return &report{
+		gClient:   g,
+		time:      t,
+		dashName:  d,
+		tmpDir:    filepath.Join("tmp", uuid.New()),
+		dashTitle: "",
+	}
 }
 
 // Generate returns the png file. After reading this file it should be Closed()
@@ -128,7 +128,7 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 	//limit concurrency using a worker pool to avoid overwhelming grafana
 	//for dashboards with many panels.
 	var wg sync.WaitGroup
-	workers := runtime.NumCPU()
+	workers := 2
 	wg.Add(workers)
 	var j uint64
 	errs := make(chan error, len(dash.Panels)) //routines can return errors on a channel
@@ -186,14 +186,13 @@ func (rep *report) renderPNG(p grafana.Panel) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error creating img directory:%v", err)
 	}
-	fmt.Println(rep.imgDirPath())
+
 	imgFileName := fmt.Sprintf("image%d.png", p.Id)
 	file, err := os.Create(filepath.Join(rep.imgDirPath(), imgFileName))
 	if err != nil {
 		return "", fmt.Errorf("error creating image file:%v", err)
 	}
 	defer file.Close()
-	fmt.Println(file.Name())
 
 	_, err = io.Copy(file, body)
 	if err != nil {

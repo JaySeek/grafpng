@@ -27,10 +27,9 @@ import (
 	"github.com/negbie/reporter/report"
 )
 
-var proto = flag.String("proto", "http://", "Grafana Protocol. Change to 'https://' if Grafana is using https. Reporter will still serve http.")
-var ip = flag.String("ip", "localhost:3000", "Grafana IP and port")
-var port = flag.String("port", ":8686", "Port to serve on")
-var templateDir = flag.String("templates", "templates/", "Directory for custom TeX templates")
+var proto = flag.String("proto", "http://", "Grafana Protocol")
+var ip = flag.String("ip", "localhost:3000", "Grafana Address")
+var port = flag.String("port", ":8686", "Service Address")
 
 func main() {
 	flag.Parse()
@@ -40,9 +39,8 @@ func main() {
 	router := mux.NewRouter()
 	RegisterHandlers(
 		router,
-		ServeReportHandler{grafana.NewV4Client, report.New},
-		ServeReportHandler{grafana.NewV5Client, report.New},
+		ServeReportHandler{grafana.NewV4Client, report.NewReport},
+		ServeReportHandler{grafana.NewV5Client, report.NewReport},
 	)
-
 	log.Fatal(http.ListenAndServe(*port, router))
 }
