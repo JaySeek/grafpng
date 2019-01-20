@@ -36,6 +36,10 @@ func main() {
 	flag.Parse()
 	log.SetOutput(os.Stdout)
 	log.Printf("serving at '%s' and using grafana at '%s'", *port, *ip)
+	w := 1
+	if *worker < 1 {
+		worker = &w
+	}
 
 	router := mux.NewRouter()
 	RegisterHandlers(

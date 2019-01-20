@@ -110,9 +110,9 @@ func TestV5Dashboard(t *testing.T) {
 
 		Convey("Panels should contain all panels that have type != row", func() {
 			So(dash.Panels, ShouldHaveLength, 5)
-			So(dash.Panels[0].Id, ShouldEqual, 0)
-			So(dash.Panels[1].Id, ShouldEqual, 1)
-			So(dash.Panels[2].Id, ShouldEqual, 2)
+			So(dash.Panels[0].ID, ShouldEqual, 0)
+			So(dash.Panels[1].ID, ShouldEqual, 1)
+			So(dash.Panels[2].ID, ShouldEqual, 2)
 		})
 
 		Convey("The Title should be parsed", func() {
