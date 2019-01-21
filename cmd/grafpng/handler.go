@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/negbie/grafpng/grafana"
@@ -46,8 +45,10 @@ func RegisterHandlers(router *mux.Router, reportServerV4, reportServerV5 ServeRe
 
 func (h ServeReportHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	log.Print("Reporter called")
-	g := h.newGrafanaClient(*proto+*ip, apiToken(req), dashVariables(req))
-	rep := h.newReport(g, dashID(req), gTime(req), *worker)
+	gc := h.newGrafanaClient(*proto+*ip, apiToken(req), dashVariables(req))
+	di := dashID(req)
+	dt := dashTime(req)
+	rep := h.newReport(gc, di, dt, *worker)
 
 	file, err := rep.Generate()
 	if err != nil {
@@ -57,7 +58,7 @@ func (h ServeReportHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) 
 	}
 	defer rep.Clean()
 	defer file.Close()
-	name := rep.Title() + "_" + time.Now().Format("2006-01-02T15h")
+	name := rep.Title() + dt.FromFormatted() + dt.ToFormatted()
 	addFilenameHeader(w, name)
 
 	_, err = io.Copy(w, file)
@@ -87,7 +88,7 @@ func dashID(r *http.Request) string {
 	return d
 }
 
-func gTime(r *http.Request) grafana.TimeRange {
+func dashTime(r *http.Request) grafana.TimeRange {
 	params := r.URL.Query()
 	t := grafana.NewTimeRange(params.Get("from"), params.Get("to"))
 	log.Println("Called with time range:", t)

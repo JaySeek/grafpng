@@ -52,6 +52,7 @@ const (
 const (
 	relTimeRegExp      = "^now([+-][0-9]+)([mhdwMy])$"
 	boundaryTimeRegExp = "^(.*?)/([dwMy])$"
+	dashTimeFormat     = "_02.01.2006-15h"
 )
 
 func init() {
@@ -71,13 +72,13 @@ func NewTimeRange(from, to string) TimeRange {
 // Formats Grafana 'From' time spec into absolute printable time
 func (tr TimeRange) FromFormatted() string {
 	n := newNow()
-	return n.parseFrom(tr.From).Format(time.UnixDate)
+	return n.parseFrom(tr.From).Format(dashTimeFormat)
 }
 
 // Formats Grafana 'To' time spec into absolute printable time
 func (tr TimeRange) ToFormatted() string {
 	n := newNow()
-	return n.parseTo(tr.To).Format(time.UnixDate)
+	return n.parseTo(tr.To).Format(dashTimeFormat)
 }
 
 func newNow() now {
