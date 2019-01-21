@@ -143,18 +143,18 @@ func (rep *report) renderPNGsParallel(dash grafana.Dashboard) (string, error) {
 				}
 				fimg, err := os.Open(filename)
 				if err != nil {
-					log.Fatal("Unable to open file", filename)
+					log.Println("Unable to open file", filename)
 				}
 				defer fimg.Close()
 				// Decode the file to get the image data
 				img, _, err := image.Decode(fimg)
 				if err != nil {
-					log.Fatal("Unable to decode ", filename)
+					log.Println("Unable to decode ", filename)
 				}
 				// Fill image data object
 				imd, err := getImageData(&img, filename)
 				if err != nil {
-					log.Fatal(err)
+					log.Println(err)
 				}
 				// Append to imadeData array
 				images[atomic.LoadUint64(&j)] = &imd
