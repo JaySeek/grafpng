@@ -26,7 +26,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/negbie/grafpng/grafana"
+	"github.com/JaySeek/grafpng/grafana"
 	"github.com/pborman/uuid"
 	. "github.com/smartystreets/goconvey/convey"
 )

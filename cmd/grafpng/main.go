@@ -23,8 +23,8 @@ import (
 	"os"
 
 	"github.com/gorilla/mux"
-	"github.com/negbie/grafpng/grafana"
-	"github.com/negbie/grafpng/report"
+	"github.com/JaySeek/grafpng/grafana"
+	"github.com/JaySeek/grafpng/report"
 )
 
 var proto = flag.String("proto", "http://", "Grafana Protocol")

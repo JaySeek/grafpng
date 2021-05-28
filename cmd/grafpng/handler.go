@@ -25,9 +25,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/JaySeek/grafpng/grafana"
+	"github.com/JaySeek/grafpng/report"
 	"github.com/gorilla/mux"
-	"github.com/negbie/grafpng/grafana"
-	"github.com/negbie/grafpng/report"
 )
 
 // ServeReportHandler interface facilitates testsing the reportServing http handler
